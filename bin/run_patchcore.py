@@ -42,13 +42,22 @@ def run(
     save_segmentation_images,
     save_patchcore_model,
 ):
+    
+    """
+    PART 1 ==> 
+    Preparation of the computer and parameters for algorithms
+    1. result storage path 
+    2. list of data loader==> calling the get_dataloaders functions line 364 of this file split each dataset in training test validation
+    3. set the device (gpu configuration) 
+    4. set the seed (line )
+    """
     methods = {key: item for (key, item) in methods}
 
     run_save_path = patchcore.utils.create_storage_folder(
         results_path, log_project, log_group, mode="iterate"
     )
 
-    list_of_dataloaders = methods["get_dataloaders"](seed)
+    list_of_dataloaders = methods["get_dataloaders"](seed) 
 
     device = patchcore.utils.set_torch_device(gpu)
     # Device context here is specifically set and used later
@@ -61,6 +70,11 @@ def run(
     )
 
     result_collect = []
+    
+    
+    """
+    PART 2 for each dataloader
+    """
 
     for dataloader_count, dataloaders in enumerate(list_of_dataloaders):
         LOGGER.info(
@@ -71,17 +85,28 @@ def run(
             )
         )
 
-        patchcore.utils.fix_seeds(seed, device)
+        patchcore.utils.fix_seeds(seed, device) #setting the seed 
 
         dataset_name = dataloaders["training"].name
 
         with device_context:
             torch.cuda.empty_cache()
+            """
+            PART 2A training part (Fig2 from the article Blue box page 4)
+            1. defining the imagesize
+            2. definining the subsampling method (line 340) 
+                    .the name of the sampler is defining in the batch command and the percentage too
+                    .the device parameter is pass at this stage
+            3. Loading the list of patchcore (all the different mid-level features patch)
+                .Using the get_patchcore function (line 307)
+                .I explain more detailled the function at line 307
+            4. we use the fit method that fill the memory blank see patchore.patchcore class
+            """
             imagesize = dataloaders["training"].dataset.imagesize
             sampler = methods["get_sampler"](
                 device,
-            )
-            PatchCore_list = methods["get_patchcore"](imagesize, sampler, device)
+            ) # Here we are defining the sampling methodology (line 340)
+            PatchCore_list = methods["get_patchcore"](imagesize, sampler, device)## dictionary ==> loader patchcore.patchcore
             if len(PatchCore_list) > 1:
                 LOGGER.info(
                     "Utilizing PatchCore Ensemble (N={}).".format(len(PatchCore_list))
@@ -96,6 +121,16 @@ def run(
                 torch.cuda.empty_cache()
                 PatchCore.fit(dataloaders["training"])
 
+            """
+            PART 2B testing part (Fig2 from the article Green box page 4)
+            1. defining the imagesize
+            2. definining the subsampling method (line 340) 
+                    .the name of the sampler is defining in the batch command and the percentage too
+                    .the device parameter is pass at this stage
+            3. Loading the list of patchcore (all the different mid-level features patch)
+                .Using the get_patchcore function (line 307)
+                .I explain more detailled the function at line 307
+            """
             torch.cuda.empty_cache()
             aggregator = {"scores": [], "segmentations": []}
             for i, PatchCore in enumerate(PatchCore_list):
@@ -111,6 +146,8 @@ def run(
                 aggregator["scores"].append(scores)
                 aggregator["segmentations"].append(segmentations)
 
+
+            """Part 3: METRICS"""
             scores = np.array(aggregator["scores"])
             min_scores = scores.min(axis=-1).reshape(-1, 1)
             max_scores = scores.max(axis=-1).reshape(-1, 1)
@@ -292,11 +329,16 @@ def patch_core(
                     backbone_name.split("-")[-1]
                 )
             backbone = patchcore.backbones.load(backbone_name)
+            """1°) backbone is dictionary of models that can be used to define the features. In the article the authors use resnet like modelsn here we get the model to use from Torch"""
             backbone.name, backbone.seed = backbone_name, backbone_seed
 
+            """2°) Defining the neighborhood of feature vecors, here we just return the methods"""
             nn_method = patchcore.common.FaissNN(faiss_on_gpu, faiss_num_workers)
 
+            """3°) Defining the PatchCore Instance"""
             patchcore_instance = patchcore.patchcore.PatchCore(device)
+            
+            """4°) Loading the patchcore instance with parameters applying the score calculation (read the explanation for this class function on pathcore.patchcore()"""
             patchcore_instance.load(
                 backbone=backbone,
                 layers_to_extract_from=layers_to_extract_from,
@@ -319,6 +361,9 @@ def patch_core(
 @click.argument("name", type=str)
 @click.option("--percentage", "-p", type=float, default=0.1, show_default=True)
 def sampler(name, percentage):
+    """
+    As I wrote in the run function, the batch define @name and @percentage params
+    """
     def get_sampler(device):
         if name == "identity":
             return patchcore.sampler.IdentitySampler()
