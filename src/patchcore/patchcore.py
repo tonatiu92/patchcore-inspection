@@ -37,11 +37,14 @@ class PatchCore(torch.nn.Module):
         nn_method=patchcore.common.FaissNN(False, 4),
         **kwargs,
     ):
+        """This method  aims to define the main attributes of the class PatchCore"""
         self.backbone = backbone.to(device)
         self.layers_to_extract_from = layers_to_extract_from
         self.input_shape = input_shape
 
         self.device = device
+        
+        """PatchMaker functions at line 280"""
         self.patch_maker = PatchMaker(patchsize, stride=patchstride)
 
         self.forward_modules = torch.nn.ModuleDict({})
@@ -98,10 +101,13 @@ class PatchCore(torch.nn.Module):
 
         _ = self.forward_modules["feature_aggregator"].eval()
         with torch.no_grad():
+            """1) forward modules as defined in the loading part"""
             features = self.forward_modules["feature_aggregator"](images)
 
+        """2) extracting mid-level-features"""
         features = [features[layer] for layer in self.layers_to_extract_from]
 
+        """3) patchify using the tensor"""
         features = [
             self.patch_maker.patchify(x, return_spatial_info=True) for x in features
         ]
@@ -109,6 +115,7 @@ class PatchCore(torch.nn.Module):
         features = [x[0] for x in features]
         ref_num_patches = patch_shapes[0]
 
+        """4) reshaping the features with the bilinear interpolation"""
         for i in range(1, len(features)):
             _features = features[i]
             patch_dims = patch_shapes[i]
@@ -159,18 +166,18 @@ class PatchCore(torch.nn.Module):
         def _image_to_features(input_image):
             with torch.no_grad():
                 input_image = input_image.to(torch.float).to(self.device)
-                return self._embed(input_image)
+                return self._embed(input_image)                                ###CALL OF EMBED METHOD
 
         features = []
-        with tqdm.tqdm(
+        with tqdm.tqdm( #Estimate the time of execution
             input_data, desc="Computing support features...", position=1, leave=False
         ) as data_iterator:
             for image in data_iterator:
                 if isinstance(image, dict):
                     image = image["image"]
-                features.append(_image_to_features(image))
+                features.append(_image_to_features(image))       ####FEATURES.APPEND(RESULT OF EMBED IMAGE)
 
-        features = np.concatenate(features, axis=0)
+        features = np.concatenate(features, axis=0) ### Group features
         features = self.featuresampler.run(features)
 
         self.anomaly_scorer.fit(detection_features=[features])
@@ -207,9 +214,11 @@ class PatchCore(torch.nn.Module):
 
         batchsize = images.shape[0]
         with torch.no_grad():
+            """Step 1 get features"""
             features, patch_shapes = self._embed(images, provide_patch_shapes=True)
             features = np.asarray(features)
 
+            """Step 2 get score"""
             patch_scores = image_scores = self.anomaly_scorer.predict([features])[0]
             image_scores = self.patch_maker.unpatch_scores(
                 image_scores, batchsize=batchsize
@@ -287,6 +296,8 @@ class PatchMaker:
             x: [torch.Tensor, bs * w//stride * h//stride, c, patchsize,
             patchsize]
         """
+        
+        """READ PARAGRAPH 3 of section 3.1"""
         padding = int((self.patchsize - 1) / 2)
         unfolder = torch.nn.Unfold(
             kernel_size=self.patchsize, stride=self.stride, padding=padding, dilation=1
