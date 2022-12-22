@@ -1,0 +1,4 @@
+General Questions about the project:
+
+Specifics Question:
+How are layers defined/choosed? Example: layer2, layer3
